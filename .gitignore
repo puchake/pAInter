@@ -102,3 +102,9 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# data directory with e.g. datasets
+data/
+
+# pycharm config
+.idea
