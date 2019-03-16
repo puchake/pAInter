@@ -10,7 +10,7 @@ change it in `setup_env.sh` script.
 
 ## Setup
 
-Simply run `setup_env.sh`. It will create virtual env in `venv` folder with `python3` present in the system. It will
+Simply run `setup_env.sh` or `setup_env.bat`. It will create virtual env in `venv` folder with `python3` present in the system. It will
 also install requirements specified in `requirements.txt` in this virtual env.
 
 ## Dataset download
