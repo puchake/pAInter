@@ -9,9 +9,11 @@ fi
 python3 -m venv venv
 source venv/bin/activate
 
+PYTHON_MAJOR_VERSION=$(IFS="." ; set -- $(python3 --version 2>&1) ; echo $2)
+
 if [[ "$1" == "CPU" ]]
 then
-    pip install https://download.pytorch.org/whl/cpu/torch-1.0.1.post2-cp35-cp35m-linux_x86_64.whl
+    pip install https://download.pytorch.org/whl/cpu/torch-1.0.1.post2-cp3${PYTHON_MAJOR_VERSION}-cp3${PYTHON_MAJOR_VERSION}m-linux_x86_64.whl
     pip install torchvision
 elif [[ "$1" == "CUDA" ]]
 then

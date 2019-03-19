@@ -5,10 +5,10 @@ It is done as an assignment for "Systems with machine learning" at GUT.
 
 ## Requirements
 
-Your system has to have Python 3.5 installed and available as `python3` command 
-(on Windows you can achieve that with `mklink` command). If you want to use 
-another python you have to change `setup_env.sh`/`setup_env.bat` to install
-appropriate version of PyTorch.
+Your system has to have Python 3 installed and available as `python3` command
+(on Windows you can achieve that with `mklink` command). If you can't have
+Python 3 available as `python3` then you will have to change
+`setup_env.sh`/`setup_env.bat` to use appropriate command.
 
 ## Setup
 
