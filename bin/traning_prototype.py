@@ -12,6 +12,7 @@ import os
 import random
 import torch
 import torch.nn as nn
+import torch.nn.functional as func
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
@@ -26,7 +27,7 @@ from IPython.display import HTML
 
 
 class Discriminator(nn.Module):
-    def __init__(self, ngpu):
+    def __init__(self, ngpu, nc, ndf):
         super(Discriminator, self).__init__()
         self.ngpu = ngpu
         self.main = nn.Sequential(
@@ -51,34 +52,51 @@ class Discriminator(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, ngpu):
+    def __init__(self, ngpu, nz, ngf, nc):
         super(Generator, self).__init__()
         self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(ngf * 8),
-            nn.ReLU(True),
-            # state size. (ngf*8) x 4 x 4
-            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 4),
-            nn.ReLU(True),
-            # state size. (ngf*4) x 8 x 8
-            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 2),
-            nn.ReLU(True),
-            # state size. (ngf*2) x 16 x 16
-            nn.ConvTranspose2d(ngf * 2, ngf, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf),
-            nn.ReLU(True),
-            # state size. (ngf) x 32 x 32
-            nn.ConvTranspose2d(ngf, nc, 4, 2, 1, bias=False),
-            nn.Tanh()
-            # state size. (nc) x 64 x 64
-        )
+        self.ngf = ngf
 
-    def forward(self, input):
-        return self.main(input)
+        self.conv1 = nn.Conv2d(1, ngf, 4, 2, 1, bias=False)
+        self.conv2 = nn.Conv2d(ngf, ngf * 2, 4, 2, 1, bias=False)
+        # Layer is now 4 x 4 x (ngf * 4)
+        self.conv3 = nn.Conv2d(ngf * 2, ngf * 4, 4, 2, 1, bias=False)
+
+        self.z_transform = nn.Linear(nz, 4 * 4 * (ngf * 4))
+
+        self.deconv1 = nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False)
+        self.deconv2 = nn.ConvTranspose2d(ngf * 6, ngf * 3, 4, 2, 1, bias=False)
+        self.deconv3 = nn.ConvTranspose2d(ngf * 4, ngf, 4, 2, 1, bias=False)
+
+        self.conv5 = nn.Conv2d(ngf, 3, 3, 1, 1, bias=False)
+
+        self.batchnorm_1 = nn.BatchNorm2d(ngf)
+        self.batchnorm_2 = nn.BatchNorm2d(ngf * 2)
+        self.batchnorm_3 = nn.BatchNorm2d(ngf * 4)
+        self.batchnorm_4 = nn.BatchNorm2d(ngf * 4)
+        self.batchnorm_5 = nn.BatchNorm2d(ngf * 3)
+        self.batchnorm_6 = nn.BatchNorm2d(ngf)
+
+    def forward(self, x, z):
+        # asdasdasd
+        x_1 = func.relu(self.batchnorm_1(self.conv1(x)))
+        x_2 = func.relu(self.batchnorm_2(self.conv2(x_1)))
+        x_3 = func.relu(self.batchnorm_3(self.conv3(x_2)))
+
+        z = func.relu(self.z_transform(z))
+        z = torch.reshape(z, (-1, self.ngf * 4, 4, 4))
+
+        xz = torch.cat((x_3, z), dim=1)
+
+        x = func.relu(self.batchnorm_4((self.deconv1(xz))))
+        x = torch.cat((x, x_2), dim=1)
+        x = func.relu(self.batchnorm_5(self.deconv2(x)))
+        x = torch.cat((x, x_1), dim=1)
+        x = func.relu(self.batchnorm_6(self.deconv3(x)))
+
+        x = func.tanh(self.conv5(x))
+
+        return x
 
 
 # custom weights initialization called on netG and netD
@@ -97,6 +115,10 @@ def parse_args():
 
     args = arg_parser.parse_args()
     return args
+
+
+def rgb2gray(rgb):
+    return np.dot(rgb[..., :3], [0.2989, 0.5870, 0.1140])
 
 
 def main():
@@ -121,7 +143,7 @@ def main():
     # Size of feature maps in discriminator
     ndf = 64
     # Number of training epochs
-    num_epochs = 5
+    num_epochs = 15
     # Learning rate for optimizers
     lr = 0.0002
     # Beta1 hyperparam for Adam optimizers
@@ -132,7 +154,10 @@ def main():
 
     # We can use an image folder dataset the way we have it setup.
     # Create the dataset
-    images = torch.tensor(np.load(args.images_path))
+    images = np.load(args.images_path)
+    gray_images = rgb2gray(images)
+    images = np.concatenate([images, gray_images[:, :, :, np.newaxis]], axis=-1)
+    images = torch.tensor(np.transpose((images - 127.5) / 127.5, (0, 3, 2, 1)))
     dataset = torch.utils.data.TensorDataset(images)
     # Create the dataloader
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
@@ -152,23 +177,20 @@ def main():
         np.transpose(
             vutils.make_grid(
                 torch.tensor(
-                    np.transpose(
-                        real_batch[0].to(device)[:64].cpu(), (0, 3, 1, 2)
-                    )
-                ), padding=2, range=(0, 255)
-            ).cpu(), (1, 2, 0)
+                    real_batch[0].to(device)[:64, :3].cpu()
+                ), padding=2, normalize=True
+            ).cpu(), (2, 1, 0)
         ))
 
     plt.show()
-    exit()
 
     # Create and initialize generator
-    netG = Generator(ngpu).to(device)
+    netG = Generator(ngpu, nz, ngf, nc).to(device)
     netG.apply(weights_init)
     print(netG)
 
     # Create and initialize discriminator
-    netD = Discriminator(ngpu).to(device)
+    netD = Discriminator(ngpu, nc, ndf).to(device)
     netD.apply(weights_init)
     print(netD)
 
@@ -177,7 +199,8 @@ def main():
 
     # Create batch of latent vectors that we will use to visualize
     #  the progression of the generator
-    fixed_noise = torch.randn(64, nz, 1, 1, device=device)
+    fixed_noise = torch.randn(64, nz, device=device).float()
+    fixed_gray = real_batch[0].to(device)[:64, 3:].float()
 
     # Establish convention for real and fake labels during training
     real_label = 1
@@ -205,7 +228,9 @@ def main():
             ## Train with all-real batch
             netD.zero_grad()
             # Format batch
-            real_cpu = data[0].to(device)
+            real_cpu = data[0].to(device).float()
+            fake_cpu = real_cpu[:, 3:]
+            real_cpu = real_cpu[:, :3]
             b_size = real_cpu.size(0)
             label = torch.full((b_size,), real_label, device=device)
             # Forward pass real batch through D
@@ -218,9 +243,9 @@ def main():
 
             ## Train with all-fake batch
             # Generate batch of latent vectors
-            noise = torch.randn(b_size, nz, 1, 1, device=device)
+            noise = torch.randn(b_size, nz, device=device)
             # Generate fake image batch with G
-            fake = netG(noise)
+            fake = netG(fake_cpu, noise)
             label.fill_(fake_label)
             # Classify all fake batch with D
             output = netD(fake.detach()).view(-1)
@@ -264,11 +289,10 @@ def main():
             if (iters % 500 == 0) or (
                 (epoch == num_epochs - 1) and (i == len(dataloader) - 1)):
                 with torch.no_grad():
-                    fake = netG(fixed_noise).detach().cpu()
+                    fake = netG(fixed_gray, fixed_noise).detach().cpu()
                 img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
 
             iters += 1
-
 
     plt.figure(figsize=(10, 5))
     plt.title("Generator and Discriminator Loss During Training")
@@ -297,14 +321,14 @@ def main():
     plt.axis("off")
     plt.title("Real Images")
     plt.imshow(np.transpose(
-        vutils.make_grid(real_batch[0].to(device)[:64], padding=5,
-                         normalize=True).cpu(), (1, 2, 0)))
+        vutils.make_grid(real_batch[0].to(device)[:64, :3], padding=5,
+                         normalize=True).cpu(), (2, 1, 0)))
 
     # Plot the fake images from the last epoch
     plt.subplot(1, 2, 2)
     plt.axis("off")
     plt.title("Fake Images")
-    plt.imshow(np.transpose(img_list[-1], (1, 2, 0)))
+    plt.imshow(np.transpose(img_list[-1], (2, 1, 0)))
     plt.show()
 
 
