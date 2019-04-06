@@ -78,7 +78,7 @@ def show_images_grid(images, images_per_row, title=None, figsize=None,
     plt.close()
 
 
-MEAN_SATURATION_THRESHOLD = 2
+MEAN_SATURATION_THRESHOLD = 1
 
 
 def find_grayscale_images(images):
@@ -124,8 +124,10 @@ def setup_logger(out_dir_path):
 # Filenames for output artifacts.
 DATASET_DISTRIBUTION_PLOT_FILENAME = "dataset_distribution.png"
 DATASET_SAMPLE_PLOT_FILENAME = "dataset_sample.png"
+DATASET_CLASSES_SAMPLE_PLOT_FILENAME = "dataset_classes_sample.png"
 MEAN_IMAGE_PLOT_FILENAME = "mean_image.png"
 MEAN_CLASS_IMAGE_PLOT_FILENAME = "mean_{}_image.png"
+MEAN_CLASSES_IMAGES_PLOT_FILENAME = "mean_classes_images.png"
 SATURATION_HISTOGRAM_PLOT_FILENAME = "saturation_histogram.png"
 GRAYSCALE_CANDIDATES_SAMPLE_PLOT_FILENAME = "grayscale_candidates.png"
 FILTERED_DATASET_DISTRIBUTION_PLOT_FILENAME = "filtered_dataset_distribution" \
@@ -192,6 +194,18 @@ def main():
         figsize=(8, 8), save_fig=True,
         save_fig_path=os.path.join(
             args.out_dir_path, DATASET_SAMPLE_PLOT_FILENAME))
+
+    # Show sample of 100 images sorted by their class in rows.
+    classes_indices = []
+    for label in unique_labels:
+        classes_indices.append(np.where(labels == label)[0][:10])
+    classes_indices = np.concatenate(classes_indices)
+    show_images_grid(
+        images[classes_indices], 10,
+        title="Sample of images from CIFAR-10 sorted by class",
+        figsize=(8, 8), save_fig=True,
+        save_fig_path=os.path.join(
+            args.out_dir_path, DATASET_CLASSES_SAMPLE_PLOT_FILENAME))
 
     # Save mean image - GAN might collapse to it.
     mean_image = np.mean(images, axis=0).astype(np.uint8)
